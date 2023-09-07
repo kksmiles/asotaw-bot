@@ -22,7 +22,7 @@ You must be in a voice channel to use the bot.
 
 ## How to setup the bot
 
-# Step 1 : Create a discord application & bot
+### Step 1 : Create a discord application & bot
 
 1. Go to https://discord.com/developers/applications
 2. Click on "New Application"
@@ -32,7 +32,7 @@ You must be in a voice channel to use the bot.
 6. Click on "Add Bot"
 7. Click on "Copy" under "Token" and save it somewhere
 
-# Step 2 : Invite your bot to your server
+### Step 2 : Invite your bot to your server
 
 1. Go to Oauth2 > URL Generator (https://discord.com/developers/applications/{yourappid}/oauth2/url-generator)
 2. Select "bot" in the "scopes" section
@@ -43,7 +43,7 @@ You must be in a voice channel to use the bot.
 7. Click on "Continue"
 8. Click on "Authorize"
 
-# Step 3 : Create a youtube application & get a token
+### Step 3 : Create a youtube application & get a token
 
 1. Go to https://console.developers.google.com/
 2. Click on "Create Project"
@@ -56,7 +56,7 @@ You must be in a voice channel to use the bot.
 9. Choose "API key"
 10. Copy the generated token and save it somewhere
 
-# Step 4 : Run the bot
+### Step 4 : Run the bot
 
 1. Clone this repository
 2. Use docker to build the image
