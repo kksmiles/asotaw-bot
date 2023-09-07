@@ -64,18 +64,14 @@ func main() {
 	//  GoRoutine : Process queue
 	go func() {
 		for {
-			fmt.Print("Processing queue...")
 			for guildId, fileQueues := range queue {
-				fmt.Print("Guild ID:", guildId)
 
 				for _, fileQueue := range fileQueues {
-					fmt.Print("File Name:", fileQueue.fileName)
 					queue[guildId] = fileQueues[1:]
 					playAudio(session, fileQueue.dgv, fileQueue.fileName, fileQueue.videoTitle)
 				}
 
 			}
-			// time.Sleep(10 * time.Second)
 		}
 	}()
 
