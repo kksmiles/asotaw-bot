@@ -17,10 +17,29 @@ import (
 )
 
 const PREFIX = "!gosing"
+const QUEUE_COMMAND = "!gosing-queue"
 const LEAVE_COMMAND = "!gosing-leave"
-
 const FOLDER = "audio"
 const YOUTUBE_SEARCH_ENDPOINT = "https://www.googleapis.com/youtube/v3/search"
+
+type fileQueue struct {
+	fileName   string
+	videoTitle string
+	dgv        *discordgo.VoiceConnection
+}
+
+type YouTubeResponse struct {
+	Items []struct {
+		ID struct {
+			VideoID string `json:"videoId"`
+		} `json:"id"`
+		Snippet struct {
+			Title string `json:"title"`
+		}
+	} `json:"items"`
+}
+
+var queue map[string][]fileQueue = make(map[string][]fileQueue)
 
 func main() {
 	// Create a new Discord session
@@ -42,6 +61,24 @@ func main() {
 		return
 	}
 
+	//  GoRoutine : Process queue
+	go func() {
+		for {
+			fmt.Print("Processing queue...")
+			for guildId, fileQueues := range queue {
+				fmt.Print("Guild ID:", guildId)
+
+				for _, fileQueue := range fileQueues {
+					fmt.Print("File Name:", fileQueue.fileName)
+					queue[guildId] = fileQueues[1:]
+					playAudio(session, fileQueue.dgv, fileQueue.fileName, fileQueue.videoTitle)
+				}
+
+			}
+			// time.Sleep(10 * time.Second)
+		}
+	}()
+
 	// Keep the bot running
 	fmt.Println("Bot is now running. Press Ctrl+C to exit.")
 	sc := make(chan os.Signal, 1)
@@ -49,44 +86,31 @@ func main() {
 	<-sc
 }
 
-type YouTubeResponse struct {
-	Items []struct {
-		ID struct {
-			VideoID string `json:"videoId"`
-		} `json:"id"`
-	} `json:"items"`
-}
-
-func getYoutubeVideoID(query string) (string, error) {
+func getYoutubeVideo(query string) (YouTubeResponse, error) {
 	YOUTUBE_TOKEN := os.Getenv("YOUTUBE_TOKEN")
 	url := fmt.Sprintf("%s?key=%s&part=snippet&q=%s&maxResults=1&type=video", YOUTUBE_SEARCH_ENDPOINT, YOUTUBE_TOKEN, url.QueryEscape(query))
 
-	// Send a GET request to the YouTube API
 	response, err := http.Get(url)
 	if err != nil {
-		return "", err
+		return YouTubeResponse{}, err
 	}
 	defer response.Body.Close()
 
-	// Check the response status code
 	if response.StatusCode != http.StatusOK {
-		return "", err
+		return YouTubeResponse{}, fmt.Errorf("response status code was %d", response.StatusCode)
 	}
 
-	// Read the response body
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return "", err
+		return YouTubeResponse{}, err
 	}
 
-	// Parse the JSON response
 	var youtubeResponse YouTubeResponse
 	if err := json.Unmarshal(responseBody, &youtubeResponse); err != nil {
-		return "", err
+		return YouTubeResponse{}, err
 	}
 
-	// Print the response as a string
-	return youtubeResponse.Items[0].ID.VideoID, nil
+	return youtubeResponse, nil
 }
 
 func downloadYoutubeVideo(videoUrl string, fileName string) error {
@@ -147,9 +171,16 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Check if the message starts with the PREFIX
 	args := strings.Split(m.Content, " ")
 	if args[0] == LEAVE_COMMAND {
+		// Clear queue
+		queue[m.GuildID] = nil
+
 		// Leave discord voice channel
 		s.ChannelMessageSend(m.ChannelID, "Leaving voice channel.")
 		s.ChannelVoiceJoinManual(m.GuildID, "", false, true)
+		return
+	}
+	if args[0] == QUEUE_COMMAND {
+		viewQueue(s, m)
 		return
 	}
 	if args[0] != PREFIX {
@@ -181,28 +212,40 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Search on Youtube
 	query := strings.Join(args[1:], " ")
-	fmt.Println("Query: " + query)
+	fmt.Println("Search Query: " + query)
 
-	videoID, err := getYoutubeVideoID(query)
+	videoInstance, err := getYoutubeVideo(query)
+	if err != nil {
+		s.ChannelMessageSend(m.ChannelID, "Error searching on Youtube.")
+		return
+	}
+	if len(videoInstance.Items) == 0 {
+		s.ChannelMessageSend(m.ChannelID, "No results found.")
+		return
+	}
+
+	// Add the file to the queue
+	videoID := videoInstance.Items[0].ID.VideoID
+	videoTitle := videoInstance.Items[0].Snippet.Title
 	videoURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
 	var fileName = videoID + ".mp3"
 
-	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Error searching on Youtube.")
-		return
-	}
-	s.ChannelMessageSend(m.ChannelID, "Added "+videoURL+" to the queue. Please wait while I remember how to sing.")
+	s.ChannelMessageSend(m.ChannelID, "Added "+videoTitle+" to the queue.")
 	downloadYoutubeVideo(videoURL, fileName)
+	queue[m.GuildID] = append(queue[m.GuildID], fileQueue{fileName, videoTitle, dgv})
+}
 
-	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Error searching on Youtube.")
-		return
-	}
-
-	fmt.Println("PlayAudioFile:", fileName)
-	s.ChannelMessageSend(m.ChannelID, "Now playing "+videoURL)
+func playAudio(s *discordgo.Session, dgv *discordgo.VoiceConnection, fileName string, videoTitle string) {
+	fmt.Println("Play Audio File:", fileName)
+	s.ChannelMessageSend(dgv.ChannelID, "Now playing "+videoTitle)
 	dgvoice.PlayAudioFile(dgv, fmt.Sprintf("%s/%s", FOLDER, fileName), make(chan bool))
+}
 
-	s.ChannelMessageSend(m.ChannelID, "Leaving voice channel.")
-	s.ChannelVoiceJoinManual(m.GuildID, "", false, true)
+func viewQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
+	var message string
+	for i, fileQueue := range queue[m.GuildID] {
+		message += fmt.Sprintf("%d. ", i+1)
+		message += fileQueue.videoTitle + "\n"
+	}
+	s.ChannelMessageSend(m.ChannelID, "Up Next: \n"+message)
 }
