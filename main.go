@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
@@ -64,14 +65,22 @@ func main() {
 	//  GoRoutine : Process queue
 	go func() {
 		for {
-			for guildId, fileQueues := range queue {
-
-				for _, fileQueue := range fileQueues {
-					queue[guildId] = fileQueues[1:]
-					playAudio(session, fileQueue.dgv, fileQueue.fileName, fileQueue.videoTitle)
+			fmt.Println("Processing queue")
+			for guildId, fqs := range queue {
+				fmt.Println("Guild ID:", guildId)
+				if len(fqs) == 0 {
+					continue
 				}
 
+				for _, fq := range fqs {
+					fmt.Println("Playing audio file:", fq.fileName)
+					playAudio(session, fq.dgv, fq.fileName, fq.videoTitle)
+
+					// Remove the file from the queue
+					queue[guildId] = queue[guildId][1:]
+				}
 			}
+			time.Sleep(5 * time.Second)
 		}
 	}()
 
@@ -229,6 +238,7 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	s.ChannelMessageSend(m.ChannelID, "Added "+videoTitle+" to the queue.")
 	downloadYoutubeVideo(videoURL, fileName)
 	queue[m.GuildID] = append(queue[m.GuildID], fileQueue{fileName, videoTitle, dgv})
+	fmt.Println("Added to queue:", fileName)
 }
 
 func playAudio(s *discordgo.Session, dgv *discordgo.VoiceConnection, fileName string, videoTitle string) {
@@ -239,9 +249,12 @@ func playAudio(s *discordgo.Session, dgv *discordgo.VoiceConnection, fileName st
 
 func viewQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var message string
-	for i, fileQueue := range queue[m.GuildID] {
-		message += fmt.Sprintf("%d. ", i+1)
-		message += fileQueue.videoTitle + "\n"
+	for i, fq := range queue[m.GuildID] {
+		if i == 0 {
+			message += fmt.Sprintf("(Now Playing) %s\n", fq.videoTitle)
+		} else {
+			message += fmt.Sprintf("%d. %s \n", i, fq.videoTitle)
+		}
 	}
 	s.ChannelMessageSend(m.ChannelID, "Up Next: \n"+message)
 }
