@@ -1,5 +1,7 @@
 # asotaw-bot
 
+A simple discord bot that plays youtube videos in a voice channel.
+
 ## Available commands
 
 You must be in a voice channel to use the bot.
