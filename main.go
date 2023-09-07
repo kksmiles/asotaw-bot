@@ -97,7 +97,7 @@ func downloadYoutubeVideo(videoUrl string, fileName string) error {
 	}
 
 	output := fmt.Sprintf("%s/%s", FOLDER, fileName)
-	command := exec.Command("youtube-dl", "--verbose", "-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", output, videoUrl)
+	command := exec.Command("yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", output, videoUrl)
 
 	stdout, err := command.StdoutPipe()
 	if err != nil {
