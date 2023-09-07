@@ -250,8 +250,11 @@ func playAudio(s *discordgo.Session, dgv *discordgo.VoiceConnection, fileName st
 func viewQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var message string
 	for i, fq := range queue[m.GuildID] {
-		message += fmt.Sprintf("%d. ", i+1)
-		message += fq.videoTitle + "\n"
+		if i == 0 {
+			message += fmt.Sprintf("(Now Playing) %s\n", fq.videoTitle)
+		} else {
+			message += fmt.Sprintf("%d. %s \n", i, fq.videoTitle)
+		}
 	}
 	s.ChannelMessageSend(m.ChannelID, "Up Next: \n"+message)
 }
