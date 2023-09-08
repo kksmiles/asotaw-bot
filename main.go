@@ -105,6 +105,7 @@ func runForGuild(session *discordgo.Session, guildId string) {
 		if len(queue[guildId]) == 0 {
 			fmt.Println("Queue is empty. Stopping guild.")
 			runningGuilds[guildId] = false
+			botLeaveVoiceChannel(session, guildId)
 			return
 		}
 
@@ -221,7 +222,7 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	switch args[0] {
 	case LEAVE_COMMAND:
-		botLeaveVoiceChannel(s, m)
+		botLeaveVoiceChannel(s, m.GuildID)
 		return
 	case VIEW_QUEUE_COMMAND:
 		viewQueue(s, m)
@@ -339,10 +340,11 @@ func viewQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 	s.ChannelMessageSend(m.ChannelID, message)
 }
 
-func botLeaveVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) {
-	queue[m.GuildID][0].stopChannel <- true
-	queue[m.GuildID] = []fileQueue{}
+func botLeaveVoiceChannel(s *discordgo.Session, guildId string) {
+	if len(queue[guildId]) > 0 {
+		queue[guildId][0].stopChannel <- true
+		queue[guildId] = []fileQueue{}
+	}
 
-	s.ChannelMessageSend(m.ChannelID, "Leaving voice channel.")
-	s.ChannelVoiceJoinManual(m.GuildID, "", false, true)
+	s.ChannelVoiceJoinManual(guildId, "", false, true)
 }
