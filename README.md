@@ -4,7 +4,7 @@ A simple discord bot that plays youtube videos in a voice channel.
 
 ## Known issue
 
-# Audio Quality issue when playing in multiple server
+### Audio Quality issue when playing in multiple server
 - [ ] The bot does support multiple servers with their own queue.
 - [ ] However, the audio quality dropped when the bot is playing in multiple servers.
 - [ ] I believe, this is due to the fact that the bot is using the same ffmpeg process to play the audio in multiple servers.
