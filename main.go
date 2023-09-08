@@ -9,24 +9,32 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
+	"github.com/kksmiles/asotaw-bot/dgvoice"
 )
 
 const PREFIX = "!gosing"
-const QUEUE_COMMAND = "!gosing-queue"
+const VIEW_QUEUE_COMMAND = "!gosing-queue"
+const PAUSE_COMMAND = "!gosing-pause"
+const RESUME_COMMAND = "!gosing-resume"
+const SKIP_COMMAND = "!gosing-skip"
 const LEAVE_COMMAND = "!gosing-leave"
 const FOLDER = "audio"
 const YOUTUBE_SEARCH_ENDPOINT = "https://www.googleapis.com/youtube/v3/search"
 
 type fileQueue struct {
-	fileName   string
-	videoTitle string
-	dgv        *discordgo.VoiceConnection
+	fileName    string
+	videoTitle  string
+	readyToPlay bool
+	playTime    int64
+	startTime   int64
+	dgv         *discordgo.VoiceConnection
+	stopChannel chan bool
 }
 
 type YouTubeResponse struct {
@@ -41,6 +49,9 @@ type YouTubeResponse struct {
 }
 
 var queue map[string][]fileQueue = make(map[string][]fileQueue)
+var runningGuilds map[string]bool = make(map[string]bool)
+var pausedGuilds map[string]bool = make(map[string]bool)
+var newGuildDetected chan bool = make(chan bool)
 
 func main() {
 	// Create a new Discord session
@@ -62,25 +73,18 @@ func main() {
 		return
 	}
 
-	//  GoRoutine : Process queue
+	//  GoRoutine : Process queue for each guild
 	go func() {
 		for {
-			fmt.Println("Processing queue")
-			for guildId, fqs := range queue {
-				fmt.Println("Guild ID:", guildId)
-				if len(fqs) == 0 {
-					continue
-				}
-
-				for _, fq := range fqs {
-					fmt.Println("Playing audio file:", fq.fileName)
-					playAudio(session, fq.dgv, fq.fileName, fq.videoTitle)
-
-					// Remove the file from the queue
-					queue[guildId] = queue[guildId][1:]
+			if <-newGuildDetected {
+				fmt.Print("New guild detected. ")
+				for guildId := range queue {
+					if !runningGuilds[guildId] {
+						runningGuilds[guildId] = true
+						go runForGuild(session, guildId)
+					}
 				}
 			}
-			time.Sleep(5 * time.Second)
 		}
 	}()
 
@@ -89,6 +93,41 @@ func main() {
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
+}
+
+func runForGuild(session *discordgo.Session, guildId string) {
+	runningGuilds[guildId] = true
+
+	for {
+		time.Sleep(1 * time.Second)
+		fmt.Println("Guild ID :", guildId)
+
+		if len(queue[guildId]) == 0 {
+			fmt.Println("Queue is empty. Stopping guild.")
+			runningGuilds[guildId] = false
+			return
+		}
+
+		if pausedGuilds[guildId] {
+			continue
+		}
+
+		if !queue[guildId][0].readyToPlay {
+			fmt.Println("File not ready to play:", queue[guildId][0].fileName)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		playFirstTrackOfGuild(session, guildId)
+
+		if !pausedGuilds[guildId] {
+			if len(queue[guildId]) > 1 {
+				queue[guildId] = queue[guildId][1:]
+			} else {
+				queue[guildId] = []fileQueue{}
+			}
+		}
+	}
 }
 
 func getYoutubeVideo(query string) (YouTubeResponse, error) {
@@ -175,20 +214,26 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Check if the message starts with the PREFIX
 	args := strings.Split(m.Content, " ")
-	if args[0] == LEAVE_COMMAND {
-		// Clear queue
-		queue[m.GuildID] = nil
 
-		// Leave discord voice channel
-		s.ChannelMessageSend(m.ChannelID, "Leaving voice channel.")
-		s.ChannelVoiceJoinManual(m.GuildID, "", false, true)
+	if !strings.HasPrefix(args[0], PREFIX) {
 		return
 	}
-	if args[0] == QUEUE_COMMAND {
+
+	switch args[0] {
+	case LEAVE_COMMAND:
+		botLeaveVoiceChannel(s, m)
+		return
+	case VIEW_QUEUE_COMMAND:
 		viewQueue(s, m)
 		return
-	}
-	if args[0] != PREFIX {
+	case PAUSE_COMMAND:
+		pauseTrack(s, m)
+		return
+	case RESUME_COMMAND:
+		resumeTrack(s, m)
+		return
+	case SKIP_COMMAND:
+		skipTrack(s, m)
 		return
 	}
 
@@ -236,25 +281,68 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var fileName = videoID + ".mp3"
 
 	s.ChannelMessageSend(m.ChannelID, "Added "+videoTitle+" to the queue.")
+	currentIndex := len(queue[m.GuildID])
+	stopChannel := make(chan bool)
+	queue[m.GuildID] = append(queue[m.GuildID], fileQueue{fileName, videoTitle, false, 0, 0, dgv, stopChannel})
+
+	if !runningGuilds[m.GuildID] {
+		newGuildDetected <- true
+	}
+
+	// Download the file
 	downloadYoutubeVideo(videoURL, fileName)
-	queue[m.GuildID] = append(queue[m.GuildID], fileQueue{fileName, videoTitle, dgv})
-	fmt.Println("Added to queue:", fileName)
+
+	// Mark the file as ready to play
+	queue[m.GuildID][currentIndex].readyToPlay = true
+
+	fmt.Println(fileName + " is now ready to play.")
 }
 
-func playAudio(s *discordgo.Session, dgv *discordgo.VoiceConnection, fileName string, videoTitle string) {
-	fmt.Println("Play Audio File:", fileName)
-	s.ChannelMessageSend(dgv.ChannelID, "Now playing "+videoTitle)
-	dgvoice.PlayAudioFile(dgv, fmt.Sprintf("%s/%s", FOLDER, fileName), make(chan bool))
+func playFirstTrackOfGuild(s *discordgo.Session, guildId string) {
+	fq := &queue[guildId][0]
+
+	fq.startTime = time.Now().Unix()
+	fmt.Println("PlayTime", fq.playTime)
+	s.ChannelMessageSend(fq.dgv.ChannelID, "Now playing "+fq.videoTitle)
+
+	dgvoice.PlayAudioFile(fq.dgv, fmt.Sprintf("%s/%s", FOLDER, fq.fileName), strconv.FormatInt(fq.playTime, 10), fq.stopChannel)
+}
+
+func pauseTrack(s *discordgo.Session, m *discordgo.MessageCreate) {
+	diff := time.Now().Unix() - queue[m.GuildID][0].startTime
+	queue[m.GuildID][0].playTime += diff
+
+	queue[m.GuildID][0].stopChannel <- true
+	pausedGuilds[m.GuildID] = true
+	s.ChannelMessageSend(m.ChannelID, "pausedGuilds the current track.")
+}
+
+func resumeTrack(s *discordgo.Session, m *discordgo.MessageCreate) {
+	pausedGuilds[m.GuildID] = false
+	s.ChannelMessageSend(m.ChannelID, "Resumed the current track.")
+}
+
+func skipTrack(s *discordgo.Session, m *discordgo.MessageCreate) {
+	queue[m.GuildID][0].stopChannel <- true
+	s.ChannelMessageSend(m.ChannelID, "Skipped the current track.")
 }
 
 func viewQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var message string
 	for i, fq := range queue[m.GuildID] {
 		if i == 0 {
-			message += fmt.Sprintf("(Now Playing) %s\n", fq.videoTitle)
+			message += fmt.Sprintf("(Now Playing) %s\n Up Next : \n", fq.videoTitle)
 		} else {
 			message += fmt.Sprintf("%d. %s \n", i, fq.videoTitle)
 		}
 	}
-	s.ChannelMessageSend(m.ChannelID, "Up Next: \n"+message)
+	s.ChannelMessageSend(m.ChannelID, message)
+}
+
+func botLeaveVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) {
+	queue[m.GuildID][0].stopChannel <- true
+	queue[m.GuildID] = []fileQueue{}
+
+	s.ChannelMessageSend(m.ChannelID, "Leaving voice channel.")
+	s.ChannelVoiceJoinManual(m.GuildID, "", false, true)
 }

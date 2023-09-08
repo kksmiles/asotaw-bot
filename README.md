@@ -1,26 +1,24 @@
 # asotaw-bot
 
-A simple discord bot that plays youtube videos in a voice channel.
+A simple discord bot that plays youtube videos in a voice channel. 
+
+## Known issue
+
+# Audio Quality issue when playing in multiple server
+- [ ] The bot does support multiple servers with their own queue.
+- [ ] However, the audio quality dropped when the bot is playing in multiple servers.
+- [ ] I believe, this is due to the fact that the bot is using the same ffmpeg process to play the audio in multiple servers.
+- [ ] I will try to fix this issue in the future.
 
 ## Available commands
 
 You must be in a voice channel to use the bot.
-1. Type ```!gosing {youtube_url}``` to add a song to the queue
-2. Type ```!gosing-queue``` to display the queue
-3. Type ```!gosing-leave``` to clear the queue and leave the voice channel
-
-## Up Next
-
-1. Fix a bug where the bot plays the last song of the queue twice
-2. ```!gosing-skip``` to skip the current song
-3. ```!gosing-pause``` to pause the current song
-4. ```!gosing-resume``` to resume the current song
-5. ```!gosing-loop``` to loop the queue
-6. ```!gosing-loop-one``` to loop the current song
-7. ```!gosing-clear``` to clear the queue
-8. ```!gosing-help``` to display the help message
-9. Update the bot to support multiple guilds.
-10. Add a simple text-based database to store the queue of each guild.
+1. ```!gosing {youtube_url}``` to add a song to the queue
+2. ```!gosing-queue``` to display the queue
+3. ```!gosing-leave``` to clear the queue and leave the voice channel
+4. ```!gosing-skip``` to skip the current song
+5. ```!gosing-pause``` to pause the current song
+6. ```!gosing-resume``` to resume the current song
 
 ## How to setup the bot
 
