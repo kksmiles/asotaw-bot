@@ -24,6 +24,9 @@ const PAUSE_COMMAND = "!gosing-pause"
 const RESUME_COMMAND = "!gosing-resume"
 const SKIP_COMMAND = "!gosing-skip"
 const LEAVE_COMMAND = "!gosing-leave"
+const LOOP_ONE_COMMAND = "!gosing-loop-one"
+const LOOP_ALL_COMMAND = "!gosing-loop-all"
+const LOOP_COMMAND = "!gosing-loop"
 const FOLDER = "audio"
 const YOUTUBE_SEARCH_ENDPOINT = "https://www.googleapis.com/youtube/v3/search"
 
@@ -51,6 +54,7 @@ type YouTubeResponse struct {
 var queue map[string][]fileQueue = make(map[string][]fileQueue)
 var runningGuilds map[string]bool = make(map[string]bool)
 var pausedGuilds map[string]bool = make(map[string]bool)
+var loopGuilds map[string]string = make(map[string]string)
 var newGuildDetected chan bool = make(chan bool)
 
 func main() {
@@ -122,11 +126,19 @@ func runForGuild(session *discordgo.Session, guildId string) {
 		playFirstTrackOfGuild(session, guildId)
 
 		if !pausedGuilds[guildId] {
-			if len(queue[guildId]) > 1 {
-				queue[guildId] = queue[guildId][1:]
+			if loopGuilds[guildId] == "one" {
+				queue[guildId][0].playTime = 0
 			} else {
-				queue[guildId] = []fileQueue{}
+				if loopGuilds[guildId] == "all" {
+					queue[guildId] = append(queue[guildId], queue[guildId][0])
+				}
+				if len(queue[guildId]) > 1 {
+					queue[guildId] = queue[guildId][1:]
+				} else {
+					queue[guildId] = []fileQueue{}
+				}
 			}
+
 		}
 	}
 }
@@ -236,6 +248,25 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	case SKIP_COMMAND:
 		skipTrack(s, m)
 		return
+	case LOOP_ONE_COMMAND:
+		loopGuilds[m.GuildID] = "one"
+		s.ChannelMessageSend(m.ChannelID, "Looping the current track.")
+		return
+	case LOOP_ALL_COMMAND:
+		loopGuilds[m.GuildID] = "all"
+		s.ChannelMessageSend(m.ChannelID, "Looping the entire queue.")
+		return
+	case LOOP_COMMAND:
+		if loopGuilds[m.GuildID] == "one" {
+			loopGuilds[m.GuildID] = "all"
+			s.ChannelMessageSend(m.ChannelID, "Looping the entire queue.")
+		} else if loopGuilds[m.GuildID] == "all" {
+			loopGuilds[m.GuildID] = "none"
+			s.ChannelMessageSend(m.ChannelID, "Looping disabled.")
+		} else {
+			loopGuilds[m.GuildID] = "one"
+			s.ChannelMessageSend(m.ChannelID, "Looping the current track.")
+		}
 	}
 
 	// Check if the user is in a voice channel
@@ -315,7 +346,7 @@ func pauseTrack(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	queue[m.GuildID][0].stopChannel <- true
 	pausedGuilds[m.GuildID] = true
-	s.ChannelMessageSend(m.ChannelID, "pausedGuilds the current track.")
+	s.ChannelMessageSend(m.ChannelID, "Paused the current track.")
 }
 
 func resumeTrack(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -340,11 +371,16 @@ func viewQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 	s.ChannelMessageSend(m.ChannelID, message)
 }
 
-func botLeaveVoiceChannel(s *discordgo.Session, guildId string) {
+func clearQueue(guildId string) {
 	if len(queue[guildId]) > 0 {
 		queue[guildId][0].stopChannel <- true
-		queue[guildId] = []fileQueue{}
 	}
+	queue[guildId] = []fileQueue{}
+	pausedGuilds[guildId] = false
+	loopGuilds[guildId] = "none"
+}
 
+func botLeaveVoiceChannel(s *discordgo.Session, guildId string) {
+	clearQueue(guildId)
 	s.ChannelVoiceJoinManual(guildId, "", false, true)
 }
