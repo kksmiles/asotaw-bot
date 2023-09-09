@@ -19,6 +19,9 @@ You must be in a voice channel to use the bot.
 4. ```!gosing-skip``` to skip the current song
 5. ```!gosing-pause``` to pause the current song
 6. ```!gosing-resume``` to resume the current song
+7. ```!gosing-loop-one``` to loop the current song
+8. ```!gosing-loop-all``` to loop the entire queue
+9. ```!gosing-loop``` to toggle the loop mode
 
 ## How to setup the bot
 
